@@ -1,162 +1,129 @@
 var express = require('express');
-const { ConnectionCheckOutFailedEvent } = require('mongodb');
 var router = express.Router();
-let productModel = require('../schemas/product')
-let CategoryModel = require('../schemas/category')
+const slugify = require('slugify');
+let productModel = require('../schemas/product');
+let CategoryModel = require('../schemas/category');
 
-
-let {check_authentication,check_authorization} = require('../utils/check_auth')
-
-
-function buildQuery(obj){
-  console.log(obj);
+function buildQuery(obj) {
   let result = {};
-  if(obj.name){
-    result.name=new RegExp(obj.name,'i');
+  if (obj.name) {
+      result.name = new RegExp(obj.name, 'i');
   }
   result.price = {};
-  if(obj.price){
-    if(obj.price.$gte){
-      result.price.$gte = obj.price.$gte;
-    }else{
-      result.price.$gte = 0
-    }
-    if(obj.price.$lte){
-      result.price.$lte = obj.price.$lte;
-    }else{
+  if (obj.price) {
+      if (obj.price.$gte) {
+          result.price.$gte = obj.price.$gte;
+      } else {
+          result.price.$gte = 0;
+      }
+      if (obj.price.$lte) {
+          result.price.$lte = obj.price.$lte;
+      } else {
+          result.price.$lte = 10000;
+      }
+  } else {
+      result.price.$gte = 0;
       result.price.$lte = 10000;
-    }
-  }else{
-    result.price.$gte = 0;
-    result.price.$lte = 10000;
   }
-  console.log(result);
   return result;
 }
 
-/* GET users listing. */
-router.get('/', async function(req, res, next) {
-  
-
+// Lấy danh sách sản phẩm theo query
+router.get('/', async function (req, res, next) {
   let products = await productModel.find(buildQuery(req.query)).populate("category");
-
-  res.status(200).send({
-    success:true,
-    data:products
-  });
-});
-router.get('/:id', async function(req, res, next) {
-  try {
-    let id = req.params.id;
-    let product = await productModel.findById(id);
-    res.status(200).send({
-      success:true,
-      data:product
-    });
-  } catch (error) {
-    res.status(404).send({
-      success:false,
-      message:"khong co id phu hop"
-    });
-  }
+  res.status(200).send({ success: true, data: products });
 });
 
-// create đăng nhập với quyền: mod
-router.post('/', check_authentication,
-  check_authorization(["mod"]), async function(req, res, next) {
-  try {
-    let cate = await CategoryModel.findOne({name:req.body.category})
-    if(cate){
-      let newProduct = new productModel({
-        name: req.body.name,
-        price:req.body.price,
-        quantity: req.body.quantity,
-        category:cate._id
-      })
-      await newProduct.save();
-      res.status(200).send({
-        success:true,
-        data:newProduct
-      });
-    }else{
-      res.status(404).send({
-        success:false,
-        data:"cate khong dung"
-      });
-    }
-  } catch (error) {
-    res.status(404).send({
-      success:false,
-      message:error.message
-    });
-  }
-});
-
-// update đăng nhập với quyền: mod
-router.put('/:id',  check_authentication,
-  check_authorization(["mod"]), async function(req, res, next) {
-  try {
-    let updateObj = {};
-    let body = req.body;
-    if(body.name){
-      updateObj.name = body.name;
-    }
-    if(body.price){
-      updateObj.price = body.price;
-    }
-    if(body.quantity){
-      updateObj.quantity = body.quantity;
-    }
-    if(body.category){
-      let cate = await CategoryModel.findOne({name:req.body.category});
-      if(!cate){
-        res.status(404).send({
-          success:false,
-          message:error.message
-        });
-      }
-    }
-    let updatedProduct = await productModel.findByIdAndUpdate(req.params.id,
-      updateObj,
-      {new:true})
-    res.status(200).send({
-      success:true,
-      data:updatedProduct
-    });
-  } catch (error) {
-    res.status(404).send({
-      success:false,
-      message:error.message
-    });
-  }
-});
-
-// delete đăng nhập với quyền: ADMIN
-router.delete('/:id', check_authentication,
-  check_authorization(["admin"]), async function(req, res, next) {
+// Lấy sản phẩm theo `id`
+router.get('/:id', async function (req, res, next) {
   try {
     let product = await productModel.findById(req.params.id);
-    if(product){
-      let deletedProduct = await productModel.findByIdAndUpdate(req.params.id,
-        {
-          isDeleted:true
-        },
-        {new:true})
-        res.status(200).send({
-          success:true,
-          data:deletedProduct
-        });
-    }else{
-      res.status(404).send({
-        success:false,
-        message:"ID khong ton tai"
-      });
-    }
+    res.status(200).send({ success: true, data: product });
   } catch (error) {
-    res.status(404).send({
-      success:false,
-      message:error.message
-    });
+    res.status(404).send({ success: false, message: "khong co id phu hop" });
   }
 });
+
+// Lấy sản phẩm theo `slug`
+router.get('/slug/:categorySlug/:productSlug', async function (req, res, next) {
+  try {
+    let category = await CategoryModel.findOne({ slug: req.params.categorySlug });
+    if (!category) return res.status(404).send({ success: false, message: "Category không tồn tại" });
+
+    let product = await productModel.findOne({ slug: req.params.productSlug, category: category._id });
+    if (!product) return res.status(404).send({ success: false, message: "Product không tồn tại" });
+
+    res.status(200).send({ success: true, data: product });
+  } catch (error) {
+    res.status(404).send({ success: false, message: error.message });
+  }
+});
+
+// Lấy tất cả sản phẩm theo `categorySlug`
+router.get('/slug/:categorySlug', async function (req, res, next) {
+  try {
+    let category = await CategoryModel.findOne({ slug: req.params.categorySlug });
+    if (!category) return res.status(404).send({ success: false, message: "Category không tồn tại" });
+
+    let products = await productModel.find({ category: category._id });
+    res.status(200).send({ success: true, data: products });
+  } catch (error) {
+    res.status(404).send({ success: false, message: error.message });
+  }
+});
+
+// Tạo mới sản phẩm (tự động tạo slug)
+router.post('/', async function (req, res, next) {
+  try {
+    let category = await CategoryModel.findOne({ name: req.body.category });
+    if (!category) return res.status(404).send({ success: false, message: "Category không đúng" });
+
+    let newProduct = new productModel({
+      name: req.body.name,
+      slug: slugify(req.body.name, { lower: true, strict: true }),
+      price: req.body.price,
+      quantity: req.body.quantity,
+      category: category._id
+    });
+
+    await newProduct.save();
+    res.status(200).send({ success: true, data: newProduct });
+  } catch (error) {
+    res.status(404).send({ success: false, message: error.message });
+  }
+});
+
+// Cập nhật sản phẩm (cập nhật slug nếu thay đổi name)
+router.put('/:id', async function (req, res, next) {
+  try {
+    let updateObj = {};
+    if (req.body.name) {
+      updateObj.name = req.body.name;
+      updateObj.slug = slugify(req.body.name, { lower: true, strict: true });
+    }
+    if (req.body.price) updateObj.price = req.body.price;
+    if (req.body.quantity) updateObj.quantity = req.body.quantity;
+
+    let updatedProduct = await productModel.findByIdAndUpdate(req.params.id, updateObj, { new: true });
+    res.status(200).send({ success: true, data: updatedProduct });
+  } catch (error) {
+    res.status(404).send({ success: false, message: error.message });
+  }
+});
+
+// Xóa sản phẩm (soft delete)
+router.delete('/:id', async function (req, res, next) {
+  try {
+    let product = await productModel.findById(req.params.id);
+    if (product) {
+      let deletedProduct = await productModel.findByIdAndUpdate(req.params.id, { isDeleted: true }, { new: true });
+      res.status(200).send({ success: true, data: deletedProduct });
+    } else {
+      res.status(404).send({ success: false, message: "ID không tồn tại" });
+    }
+  } catch (error) {
+    res.status(404).send({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;

@@ -1,52 +1,48 @@
 var express = require('express');
 var router = express.Router();
-let categoryModel = require('../schemas/category')
+const slugify = require('slugify');
+let categoryModel = require('../schemas/category');
 
-let {check_authentication,check_authorization} = require('../utils/check_auth')
-
-/* GET users listing. */
-router.get('/', async function(req, res, next) {
-  
-
+// Lấy danh sách category
+router.get('/', async function (req, res, next) {
   let categories = await categoryModel.find({});
-
-  res.status(200).send({
-    success:true,
-    data:categories
-  });
+  res.status(200).send({ success: true, data: categories });
 });
-router.get('/:id', async function(req, res, next) {
+
+// Lấy category theo `id`
+router.get('/:id', async function (req, res, next) {
   try {
-    let id = req.params.id;
-    let category = await categoryModel.findById(id);
-    res.status(200).send({
-      success:true,
-      data:category
-    });
+    let category = await categoryModel.findById(req.params.id);
+    res.status(200).send({ success: true, data: category });
   } catch (error) {
-    res.status(404).send({
-      success:false,
-      message:"khong co id phu hop"
-    });
+    res.status(404).send({ success: false, message: "khong co id phu hop" });
   }
 });
 
-router.post('/', check_authentication,
-  check_authorization(["mod"]),async function(req, res, next) {
+// Lấy category theo `slug`
+router.get('/slug/:categorySlug', async function (req, res, next) {
+  try {
+    let category = await categoryModel.findOne({ slug: req.params.categorySlug });
+    if (!category) throw new Error("Category không tồn tại");
+
+    res.status(200).send({ success: true, data: category });
+  } catch (error) {
+    res.status(404).send({ success: false, message: error.message });
+  }
+});
+
+// Tạo mới category (tự động tạo slug)
+router.post('/', async function (req, res, next) {
   try {
     let newCategory = new categoryModel({
       name: req.body.name,
-    })
+      slug: slugify(req.body.name, { lower: true, strict: true })
+    });
+
     await newCategory.save();
-    res.status(200).send({
-      success:true,
-      data:newCategory
-    });
+    res.status(200).send({ success: true, data: newCategory });
   } catch (error) {
-    res.status(404).send({
-      success:false,
-      message:error.message
-    });
+    res.status(404).send({ success: false, message: error.message });
   }
 });
 
